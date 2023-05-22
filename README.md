@@ -24,9 +24,29 @@ three, so for the remainder we'll stick with the `[NLG] ` prefix. Adding a trail
 ### 2.2 Hyperparameter sweep
 
 I ran a [wandb sweep](https://docs.wandb.ai/ref/python/sweep) for all three model sizes of `yhavinga/ul2-*-dutch`. We
-use adafactor as an optimizer in all cases, as that is the suggested optimizer for T5 models and was also used in the
+use `adafactor` as an optimizer in all cases, as that is the suggested optimizer for T5 models and was also used in the
 pretraining stage of the models. The optimization objective is to maximize sari+rougeLsum evaluation scores.
 (You can also optimize for a minimal loss with `--hparam_optimize_for_loss`.)
+
+For each model I ran 16 trials, with the following spectrum (the defaults when running the train.py script):
+
+```python
+"parameters": {
+    "learning_rate": {"distribution": "log_uniform_values", "min": 1e-4, "max": 1e-3},
+    "per_device_train_batch_size": {"values": [8, 12, 16, 20, 24, 28, 32]},
+    "num_train_epochs": {"min": 8, "max": 40}
+}
+```
+
+You can modify these with the following parameters:
+
+- hparam_lr_min
+- hparam_lr_max
+- hparam_bs_min
+- hparam_bs_max
+- hparam_epoch_min
+- hparam_epoch_max
+
 
 Note the flag `--include_inputs_for_metrics`, which is needed to calculate the sari metric.
 
@@ -54,7 +74,7 @@ CUDA_VISIBLE_DEVICES=2 WANDB_PROJECT="mai-simplification-nl-small-2023" python t
 
 #### ul2-base-dutch
 ```shell
-CUDA_VISIBLE_DEVICES=2 WANDB_PROJECT="mai-simplification-nl-base-2023" python train.py \
+CUDA_VISIBLE_DEVICES=1 WANDB_PROJECT="mai-simplification-nl-base-2023" python train.py \
     --no_use_fast_tokenizer \
     --dataset_name BramVanroy/chatgpt-dutch-simplification \
     --overwrite_output_dir \
