@@ -1,5 +1,12 @@
 # Sentence-Level Text Simplification for Dutch
 
+This repository contains training code and detailed commands for three models for Dutch text simplification:
+
+- [`BramVanroy/ul2-small-dutch-simplification-mai-2023`](https://huggingface.co/BramVanroy/ul2-small-dutch-simplification-mai-2023)
+- [`BramVanroy/ul2-base-dutch-simplification-mai-2023`](https://huggingface.co/BramVanroy/ul2-base-dutch-simplification-mai-2023)
+- [`BramVanroy/ul2-large-dutch-simplification-mai-2023`](https://huggingface.co/BramVanroy/ul2-large-dutch-simplification-mai-2023)
+
+
 ## 1. Split/get the data
 
 This is only needed if you have access to the original, un-split data. You will probably just want to use
@@ -37,10 +44,10 @@ use `adafactor` as an optimizer in all cases, as that is the suggested optimizer
 pretraining stage of the models. The optimization objective is to maximize sari+rougeLsum evaluation scores.
 (You can also optimize for a minimal loss with `--hparam_optimize_for_loss`.)
 
-For each model I ran 16 trials, with the following spectrum (the defaults when running the train.py script):
+For each model I ran 16 trials, with the following spectrum (the defaults when running the `train.py` script):
 
 ```python
-"parameters": {
+{
     "learning_rate": {"distribution": "log_uniform_values", "min": 1e-4, "max": 1e-3},
     "per_device_train_batch_size": {"values": [8, 12, 16, 20, 24, 28, 32]},
     "num_train_epochs": {"min": 8, "max": 40}
@@ -83,7 +90,7 @@ CUDA_VISIBLE_DEVICES=2 WANDB_PROJECT="mai-simplification-nl-small-2023" python t
 
 **Best hyperparameters**
 
-```python
+```json
 {
     "learning_rate": 0.0006370158604635734,
     "num_train_epochs": 37,
@@ -93,6 +100,9 @@ CUDA_VISIBLE_DEVICES=2 WANDB_PROJECT="mai-simplification-nl-small-2023" python t
 
 The best run in the hyperparameter search was `run-t4jeq9fg` so for the evaluation, we use its last checkpoint
 `checkpoint-1887`.
+
+Important note: the sweep showed that higher number of epochs yielded better results. It is possible that even more 
+than 40 epochs would give you even a better model.
 
 **Evaluate** 
 
@@ -144,7 +154,7 @@ CUDA_VISIBLE_DEVICES=1 python train.py \
 
 **Best hyperparameters**
 
-```python
+```json
 {
     "learning_rate": 0.00026885245616406115,
     "num_train_epochs": 26,
@@ -177,8 +187,7 @@ CUDA_VISIBLE_DEVICES=2 python train.py \
     --output_dir /home/local/vanroy/mai-simplification-nl-2023/models/ul2-base--hparam-search/run-dkgwv7w4/
 ```
 
-**Final model**: []()
-
+**Final model**: [BramVanroy/ul2-base-dutch-simplification-mai-2023](https://huggingface.co/BramVanroy/ul2-base-dutch-simplification-mai-2023)
 
 
 #### ul2-large-dutch
@@ -202,3 +211,43 @@ CUDA_VISIBLE_DEVICES=3 WANDB_PROJECT="mai-simplification-nl-large-2023" python t
     --model_name_or_path yhavinga/ul2-large-dutch \
     --output_dir models/ul2-large--hparam-search
 ```
+
+Note: in retrospect, I probably should have allowed a smaller learning rate for this large model. `1e-4` is still
+quite large. You may achieve better results when training with a smaller learning rate.
+
+**Best hyperparameters**
+
+```json
+{
+    "learning_rate": 0.0002927210895006501,
+    "num_train_epochs": 27,
+    "per_device_train_batch_size": 32
+}
+```
+
+The best run in the hyperparameter search was `zu8po8md` so for the evaluation, we use its last checkpoint
+`checkpoint-864`.
+
+**Evaluate** 
+
+```shell
+CUDA_VISIBLE_DEVICES=3 python train.py \
+    --no_use_fast_tokenizer \
+    --dataset_name BramVanroy/chatgpt-dutch-simplification \
+    --overwrite_output_dir \
+    --text_column source \
+    --simple_column target \
+    --log_level info \
+    --source_prefix "[NLG] " \
+    --include_inputs_for_metrics \
+    \
+    --predict_with_generate \
+    --generation_num_beams 3 \
+    --do_eval \
+    --do_predict \
+    \
+    --model_name_or_path /home/local/vanroy/mai-simplification-nl-2023/models/ul2-large--hparam-search/run-zu8po8md/checkpoint-864 \
+    --output_dir /home/local/vanroy/mai-simplification-nl-2023/models/ul2-large--hparam-search/run-zu8po8md/
+```
+
+**Final model**: [BramVanroy/ul2-large-dutch-simplification-mai-2023](https://huggingface.co/BramVanroy/ul2-large-dutch-simplification-mai-2023)
