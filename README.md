@@ -81,9 +81,47 @@ CUDA_VISIBLE_DEVICES=2 WANDB_PROJECT="mai-simplification-nl-small-2023" python t
     --output_dir models/ul2-small--hparam-search
 ```
 
+**Best hyperparameters**
+
+```python
+{
+    "learning_rate": 0.0006370158604635734,
+    "num_train_epochs": 37,
+    "per_device_train_batch_size": 20
+}
+```
+
+The best run in the hyperparameter search was `run-t4jeq9fg` so for the evaluation, we use its last checkpoint
+`checkpoint-1887`.
+
+**Evaluate** 
+
+```shell
+CUDA_VISIBLE_DEVICES=2 WANDB_PROJECT="mai-simplification-nl-small-2023" python train.py \
+    --no_use_fast_tokenizer \
+    --dataset_name BramVanroy/chatgpt-dutch-simplification \
+    --overwrite_output_dir \
+    --text_column source \
+    --simple_column target \
+    --log_level info \
+    --source_prefix "[NLG] " \
+    --include_inputs_for_metrics \
+    \
+    --predict_with_generate \
+    --generation_num_beams 3 \
+    --do_eval \
+    --do_predict \
+    \
+    --model_name_or_path /home/local/vanroy/mai-simplification-nl-2023/models/ul2-small--hparam-search/run-t4jeq9fg/checkpoint-1887 \
+    --output_dir /home/local/vanroy/mai-simplification-nl-2023/models/ul2-small--hparam-search/run-t4jeq9fg/
+```
+
+**Final model**: [BramVanroy/ul2-small-dutch-simplification-mai-2023](https://huggingface.co/BramVanroy/ul2-small-dutch-simplification-mai-2023)
+
+
 #### ul2-base-dutch
 ```shell
-CUDA_VISIBLE_DEVICES=1 WANDB_PROJECT="mai-simplification-nl-base-2023" python train.py \
+CUDA_VISIBLE_DEVICES=1 python train.py \
     --no_use_fast_tokenizer \
     --dataset_name BramVanroy/chatgpt-dutch-simplification \
     --overwrite_output_dir \
@@ -102,6 +140,46 @@ CUDA_VISIBLE_DEVICES=1 WANDB_PROJECT="mai-simplification-nl-base-2023" python tr
     --model_name_or_path yhavinga/ul2-base-dutch \
     --output_dir models/ul2-base--hparam-search
 ```
+
+
+**Best hyperparameters**
+
+```python
+{
+    "learning_rate": 0.00026885245616406115,
+    "num_train_epochs": 26,
+    "per_device_train_batch_size": 12
+}
+```
+
+The best run in the hyperparameter search was `dkgwv7w4` so for the evaluation, we use its last checkpoint
+`checkpoint-2210`.
+
+**Evaluate** 
+
+```shell
+CUDA_VISIBLE_DEVICES=2 python train.py \
+    --no_use_fast_tokenizer \
+    --dataset_name BramVanroy/chatgpt-dutch-simplification \
+    --overwrite_output_dir \
+    --text_column source \
+    --simple_column target \
+    --log_level info \
+    --source_prefix "[NLG] " \
+    --include_inputs_for_metrics \
+    \
+    --predict_with_generate \
+    --generation_num_beams 3 \
+    --do_eval \
+    --do_predict \
+    \
+    --model_name_or_path /home/local/vanroy/mai-simplification-nl-2023/models/ul2-base--hparam-search/run-dkgwv7w4/checkpoint-2210 \
+    --output_dir /home/local/vanroy/mai-simplification-nl-2023/models/ul2-base--hparam-search/run-dkgwv7w4/
+```
+
+**Final model**: []()
+
+
 
 #### ul2-large-dutch
 ```shell
