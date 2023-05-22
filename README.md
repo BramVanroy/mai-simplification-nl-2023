@@ -1,24 +1,33 @@
-## 1. Split the data
+# Sentence-Level Text Simplification for Dutch
 
-Making 80% train, 10% dev, 10% test splits.
+## 1. Split/get the data
+
+This is only needed if you have access to the original, un-split data. You will probably just want to use
+the pre-split data that is a result of this process. You can find this dataset on
+[the hub](https://huggingface.co/datasets/BramVanroy/chatgpt-dutch-simplification) or use it as a dataset_name in
+your scripts as `BramVanroy/chatgpt-dutch-simplification`.
+
+If you still want to process your own data, you can for instance make 80% train, 10% dev, 10% test splits.
 
 ```shell
 python make_split.py data/chatgpt_corpus_extended.csv 0.8 0.1 0.1 --sep ";" --shuffle_seed 42
 ```
 
-
 ## 2. Train
 
-See information about prefixes [here](https://huggingface.co/yhavinga/ul2-small-dutch#intended-uses--limitations) and
-T5 finetuning tips [here](https://discuss.huggingface.co/t/t5-finetuning-tips/684/2).
+We finetune small, base, and large variants of `yhavinga/ul2-*-dutch`. A series of Dutch T5 models trained on the UL2
+objective. 
 
-Possible prefixes for the ul2 Dutch models: `[NLU]`, `[NLG]`, or `[S2S]`. (We end up using `[NLG]`, see below.)
+For T5 finetuning tips, see [here](https://discuss.huggingface.co/t/t5-finetuning-tips/684/2).
 
 
 ### 2.1 Naive prefix testing
 
-I ran a few default training runs with all possible prefixes (above) and did not find a major difference between the
-three, so for the remainder we'll stick with the `[NLG] ` prefix. Adding a trailing space seems to work best.
+See information about source prefixes for the Dutch UL2 models 
+[here](https://huggingface.co/yhavinga/ul2-small-dutch#intended-uses--limitations).
+Possible prefixes are: `[NLU]`, `[NLG]`, or `[S2S]`. I ran a few default training runs with all possible prefixes
+and did not find a major difference between the three, so for the remainder we'll stick with the `[NLG] ` prefix.
+Adding a trailing space seems to work best.
 
 
 ### 2.2 Hyperparameter sweep
