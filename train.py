@@ -310,11 +310,11 @@ class HyperOptArguments:
                           " 'do_hparams_search'."},
     )
     hparam_epoch_min: int = field(
-        default=2,
+        default=8,
         metadata={"help": "Minimum number of epochs in hyperparameter search. Only used if 'do_hparams_search'."},
     )
     hparam_epoch_max: int = field(
-        default=30,
+        default=40,
         metadata={"help": "Maximum number of epochs in hyperparameter search. Only used if 'do_hparams_search'."},
     )
     hparam_max_trials: int = field(
