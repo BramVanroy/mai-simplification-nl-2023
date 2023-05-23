@@ -1,5 +1,7 @@
 # Sentence-Level Text Simplification for Dutch
 
+**Play with the [demo](https://huggingface.co/spaces/BramVanroy/mai-simplification-nl-2023-demo)!**
+
 This repository contains training code and detailed commands for three models for Dutch text simplification:
 
 - [`BramVanroy/ul2-small-dutch-simplification-mai-2023`](https://huggingface.co/BramVanroy/ul2-small-dutch-simplification-mai-2023)
