@@ -46,7 +46,8 @@ use `adafactor` as an optimizer in all cases, as that is the suggested optimizer
 pretraining stage of the models. The optimization objective is to maximize sari+rougeLsum evaluation scores.
 (You can also optimize for a minimal loss with `--hparam_optimize_for_loss`.)
 
-For each model I ran 16 trials, with the following spectrum (the defaults when running the `train.py` script):
+For each model I ran 16 trials, with the following spectrum (the defaults when running the `train.py` script), unless
+differently specified in the command-line arguments:
 
 ```python
 {
@@ -60,13 +61,16 @@ You can modify these with the following parameters:
 
 - hparam_lr_min
 - hparam_lr_max
+- hparam_wd_min
+- hparam_wd_max
 - hparam_bs_min
 - hparam_bs_max
 - hparam_epoch_min
 - hparam_epoch_max
 
 
-Note the flag `--include_inputs_for_metrics`, which is needed to calculate the sari metric.
+Note the flag `--include_inputs_for_metrics` in the commands below, which is needed to calculate the sari metric
+because it relies on the source text to evaluate the simplified text.
 
 #### ul2-small-dutch
 ```shell
