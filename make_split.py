@@ -5,13 +5,13 @@ import pandas as pd
 
 
 def main(
-        fin: str,
-        train_p: float,
-        dev_p: float,
-        test_p: float,
-        sep: str = "\t",
-        shuffle: bool = False,
-        shuffle_seed: Optional[int] = None
+    fin: str,
+    train_p: float,
+    dev_p: float,
+    test_p: float,
+    sep: str = "\t",
+    shuffle: bool = False,
+    shuffle_seed: Optional[int] = None,
 ):
     """Given an input file, split it into train, dev, test splits according to the given percentages
     :param fin: input data file
@@ -24,7 +24,7 @@ def main(
     """
     df = pd.read_csv(fin, encoding="utf-8", sep=sep)
 
-    if train_p + dev_p + test_p != 1.:
+    if train_p + dev_p + test_p != 1.0:
         raise ValueError(f"'train_p', 'dev_p' and 'test_p' must sum to 1!")
 
     # Shuffle dataset before splitting. If 'shuffle_seed' is not None, shuffling is deterministic
@@ -38,8 +38,8 @@ def main(
 
     # Split the DataFrame into train, dev, and test dfs
     train_data = df[:train_size]
-    dev_data = df[train_size:train_size + dev_size]
-    test_data = df[train_size + dev_size:]
+    dev_data = df[train_size : train_size + dev_size]
+    test_data = df[train_size + dev_size :]
     print(f"TOTAL SIZE: {total_rows:,}")
     print(f"TRAIN SIZE: {len(train_data):,}; DEV SIZE: {len(dev_data):,}; TEST SIZE: {len(test_data):,}")
 
@@ -61,7 +61,8 @@ if __name__ == "__main__":
     cparser.add_argument("test_p", type=float, help="Size of test set in percentage")
     cparser.add_argument("--sep", default="\t", help="Separator in the CSV file (defaults to tab character)")
     cparser.add_argument("--shuffle", action="store_true", help="Whether to shuffle the dataset before splitting")
-    cparser.add_argument("--shuffle_seed", type=int,
-                         help="Shuffle seed to fix. If given, the shuffle will be deterministic")
+    cparser.add_argument(
+        "--shuffle_seed", type=int, help="Shuffle seed to fix. If given, the shuffle will be deterministic"
+    )
 
     main(**vars(cparser.parse_args()))

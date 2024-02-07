@@ -10,8 +10,9 @@ def main(din: str):
     del flax_model
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     import argparse
+
     cparser = argparse.ArgumentParser(
         description="Convert a given directory with a PyTorch checkpoint to Tensorflow and Flax"
     )
