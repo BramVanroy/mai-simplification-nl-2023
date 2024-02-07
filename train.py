@@ -51,11 +51,8 @@ from transformers import (
     set_seed,
 )
 from transformers.trainer_utils import get_last_checkpoint
-from transformers.utils import is_offline_mode, send_example_telemetry
-from transformers.utils.versions import require_version
+from transformers.utils import is_offline_mode
 
-
-require_version("datasets>=1.8.0", "To fix: pip install -r examples/pytorch/summarization/requirements.txt")
 
 logger = logging.getLogger(__name__)
 
@@ -148,16 +145,12 @@ class DataTrainingArguments:
     validation_file: Optional[str] = field(
         default=None,
         metadata={
-            "help": (
-                "An optional input evaluation data file to evaluate the metrics on (a jsonlines or csv file)."
-            )
+            "help": ("An optional input evaluation data file to evaluate the metrics on (a jsonlines or csv file).")
         },
     )
     test_file: Optional[str] = field(
         default=None,
-        metadata={
-            "help": "An optional input test data file to evaluate the metrics on (a jsonlines or csv file)."
-        },
+        metadata={"help": "An optional input test data file to evaluate the metrics on (a jsonlines or csv file)."},
     )
     overwrite_cache: bool = field(
         default=False, metadata={"help": "Overwrite the cached training and evaluation sets"}
@@ -288,8 +281,7 @@ class DataTrainingArguments:
 class HyperOptArguments:
     do_hparams_search: bool = field(
         default=False,
-        metadata={
-            "help": "Whether to do a hyperparameter search on learning rate, batch size, and number of epochs."},
+        metadata={"help": "Whether to do a hyperparameter search on learning rate, batch size, and number of epochs."},
     )
     hparam_lr_min: float = field(
         default=1e-4,
@@ -301,13 +293,17 @@ class HyperOptArguments:
     )
     hparam_bs_min: int = field(
         default=8,
-        metadata={"help": "Minimum batch size in hyperparameter search, must be a multiple of 4. Only used if"
-                          " 'do_hparams_search'."},
+        metadata={
+            "help": "Minimum batch size in hyperparameter search, must be a multiple of 4. Only used if"
+            " 'do_hparams_search'."
+        },
     )
     hparam_bs_max: int = field(
         default=32,
-        metadata={"help": "Maximum batch size in hyperparameter search, must be a multiple of 4. Only used if"
-                          " 'do_hparams_search'."},
+        metadata={
+            "help": "Maximum batch size in hyperparameter search, must be a multiple of 4. Only used if"
+            " 'do_hparams_search'."
+        },
     )
     hparam_epoch_min: int = field(
         default=8,
@@ -325,8 +321,8 @@ class HyperOptArguments:
         default=False,
         metadata={
             "help": "Whether to optimize hyperparameter search by loss only. Otherwise we optimize for the sum"
-                    " of sari and rougeLsum."
-        }
+            " of sari and rougeLsum."
+        },
     )
 
 
@@ -339,13 +335,11 @@ def main():
     if len(sys.argv) == 2 and sys.argv[1].endswith(".json"):
         # If we pass only one argument to the script and it's the path to a json file,
         # let's parse it to get our arguments.
-        model_args, data_args, hyperopt_args, training_args = parser.parse_json_file(json_file=os.path.abspath(sys.argv[1]))
+        model_args, data_args, hyperopt_args, training_args = parser.parse_json_file(
+            json_file=os.path.abspath(sys.argv[1])
+        )
     else:
         model_args, data_args, hyperopt_args, training_args = parser.parse_args_into_dataclasses()
-
-    # Sending telemetry. Tracking the example usage helps us better allocate resources to maintain them. The
-    # information sent is the one passed as arguments along with your Python/PyTorch versions.
-    send_example_telemetry("run_summarization", model_args, data_args)
 
     # Setup logging
     logging.basicConfig(
@@ -521,7 +515,9 @@ def main():
             raise ValueError("--do_predict requires a test dataset")
         column_names = raw_datasets["test"].column_names
     elif not hyperopt_args.do_hparams_search:
-        logger.info("There is nothing to do. Please pass `do_train`, `do_eval`, 'do_hparams_search' and/or `do_predict`.")
+        logger.info(
+            "There is nothing to do. Please pass `do_train`, `do_eval`, 'do_hparams_search' and/or `do_predict`."
+        )
         return
 
     if isinstance(tokenizer, tuple(MULTILINGUAL_TOKENIZERS)):
@@ -646,8 +642,10 @@ def main():
     # Metric
     rouge_metric = evaluate.load("rouge")
     sari_metric = evaluate.load("sari")
+    bleu_metric = evaluate.load("sacrebleu")
+    bertscore_metric = evaluate.load("bertscore")
 
-    def postprocess_text(preds, labels):
+    def postprocess_text_rouge(preds, labels):
         preds = [pred.strip() for pred in preds]
         labels = [label.strip() for label in labels]
 
@@ -670,25 +668,57 @@ def main():
         decoded_labels = tokenizer.batch_decode(labels, skip_special_tokens=True)
 
         # Some simple post-processing
-        decoded_rouge_preds, decoded_rouge_labels = postprocess_text(decoded_preds, decoded_labels)
+        decoded_rouge_preds, decoded_rouge_labels = postprocess_text_rouge(decoded_preds, decoded_labels)
+
+        result = {}
 
         # The ROUGE stemmer is nltk's Porter stemmer which is very much focused on English, so not using it here
-        rouge_result = rouge_metric.compute(predictions=decoded_rouge_preds,
-                                            references=decoded_rouge_labels,
-                                            use_stemmer=False)
-        rouge_result = {k: round(v * 100, 4) for k, v in rouge_result.items()}
+        rouge_result = rouge_metric.compute(
+            predictions=decoded_rouge_preds, references=decoded_rouge_labels, use_stemmer=False
+        )
+        result = {**result, **{k: round(v * 100, 4) for k, v in rouge_result.items()}}
+
+        # BLEU
+        embedded_refs = [[l] for l in decoded_labels]
+        bleu_result = bleu_metric.compute(predictions=decoded_preds, references=embedded_refs)
+        result = {**result, **{f"bleu_{k}": v for k, v in bleu_result.items()}}
+
+        # BERTScore
+        bertscore_result = bertscore_metric.compute(
+            predictions=decoded_preds, references=decoded_labels, model_type="microsoft/mdeberta-v3-base", nthreads=8
+        )
+        result = {
+            **result,
+            **{
+                f"bertscore_{k}": sum(v) / len(v)
+                for k, v in bertscore_result.items()
+                if isinstance(v, list) and isinstance(v[0], float)
+            },
+        }
 
         if training_args.include_inputs_for_metrics:
             inputs = eval_preds.inputs
             inputs = np.where(inputs != -100, inputs, tokenizer.pad_token_id)
-            decoded_inputs = [re.sub("^\[(?:NLG|S2S|NLU)\]\s*", "", sent) for sent in
-                              tokenizer.batch_decode(inputs, skip_special_tokens=True)]
-            sari_result = sari_metric.compute(sources=decoded_inputs, predictions=decoded_preds, references=[[l] for l in decoded_labels])
+            decoded_inputs = [
+                re.sub("^\[(?:NLG|S2S|NLU)\]\s*", "", sent)
+                for sent in tokenizer.batch_decode(inputs, skip_special_tokens=True)
+            ]
+
+            # SARI
+            sari_result = sari_metric.compute(
+                sources=decoded_inputs, predictions=decoded_preds, references=embedded_refs
+            )
             sari_result = {k: round(v, 4) for k, v in sari_result.items()}
             result = {**rouge_result, **sari_result}
 
         prediction_lens = [np.count_nonzero(pred != tokenizer.pad_token_id) for pred in preds]
         result["gen_len"] = np.mean(prediction_lens)
+
+        if training_args.include_inputs_for_metrics:
+            # With sari
+            result["combined_metrics"] = result["sari"] + result["bleu_score"] + result["bertscore_f1"] + result["rougeLSum"]
+        else:
+            result["combined_metrics"] = result["bleu_score"] + result["bertscore_f1"] + result["rougeLSum"]
 
         return result
 
@@ -707,14 +737,20 @@ def main():
             "method": "bayes",
             "metric": {
                 "name": "objective",
-                "goal": "minimize" if hyperopt_args.hparam_optimize_for_loss else "maximize"
+                "goal": "minimize" if hyperopt_args.hparam_optimize_for_loss else "maximize",
             },
             "parameters": {
-                "learning_rate": {"distribution": "log_uniform_values", "min": hyperopt_args.hparam_lr_min, "max": hyperopt_args.hparam_lr_max},
-                "per_device_train_batch_size": {"values": list(range(hyperopt_args.hparam_bs_min, hyperopt_args.hparam_bs_max+1, 4))},
-                "num_train_epochs": {"min": hyperopt_args.hparam_epoch_min, "max": hyperopt_args.hparam_epoch_max}
+                "learning_rate": {
+                    "distribution": "log_uniform_values",
+                    "min": hyperopt_args.hparam_lr_min,
+                    "max": hyperopt_args.hparam_lr_max,
+                },
+                "per_device_train_batch_size": {
+                    "values": list(range(hyperopt_args.hparam_bs_min, hyperopt_args.hparam_bs_max + 1, 4))
+                },
+                "num_train_epochs": {"min": hyperopt_args.hparam_epoch_min, "max": hyperopt_args.hparam_epoch_max},
             },
-            "run_cap": hyperopt_args.hparam_max_trials
+            "run_cap": hyperopt_args.hparam_max_trials,
         }
 
     def model_init(trial):
@@ -727,16 +763,8 @@ def main():
             use_auth_token=True if model_args.use_auth_token else None,
         )
 
-    def hparam_objective(metrics: Dict[str, float]) -> float:
-        metrics = copy.deepcopy(metrics)
-
-        if hyperopt_args.hparam_optimize_for_loss:
-            return metrics["eval_loss"]
-
-        return metrics["eval_rougeLsum"] + metrics["eval_sari"]
-
     # Initialize our Trainer
-    training_args.metric_for_best_model = "eval/loss" if hyperopt_args.hparam_optimize_for_loss else "eval/sari"
+    training_args.metric_for_best_model = "eval/loss" if hyperopt_args.hparam_optimize_for_loss else "eval/combined_metrics"
     training_args.greater_is_better = not hyperopt_args.hparam_optimize_for_loss
     trainer = Seq2SeqTrainer(
         model=None if hyperopt_args.do_hparams_search else model,
@@ -751,11 +779,8 @@ def main():
 
     if hyperopt_args.do_hparams_search:
         best_trial = trainer.hyperparameter_search(
-            compute_objective=hparam_objective,
             backend="wandb",
-            # I think that this is only used to set the column in the sweep chart but does not mean that we use
-            # this metric only for optimization. That is what the hparam_objective is for.
-            metric="eval/sari",
+            metric="eval/combined_metrics",
             hp_space=wandb_hp_space,
             n_trials=hyperopt_args.hparam_max_trials,
             direction="minimize" if hyperopt_args.hparam_optimize_for_loss else "maximize",
@@ -765,13 +790,12 @@ def main():
         with Path(training_args.output_dir).joinpath("wandb_best_hparams.json").open("w", encoding="utf-8") as hp_out:
             best_trial.hyperparameters.pop("assignments", None)
             best_trial.hyperparameters["metric"] = (
-                "eval/loss" if hyperopt_args.hparam_optimize_for_loss
-                else "eval/sari+eval/rougeLsum"
+                "eval/loss" if hyperopt_args.hparam_optimize_for_loss else "eval/sari+eval/rougeLsum"
             )
             hparams_dump = {
                 **best_trial.hyperparameters,
                 "best_run": best_trial.run_id,
-                "objective": best_trial.objective
+                "objective": best_trial.objective,
             }
             dump(hparams_dump, hp_out, indent=4, sort_keys=True)
 
