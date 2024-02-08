@@ -25,12 +25,14 @@ import sys
 from dataclasses import dataclass, field
 from json import dump
 from pathlib import Path
-from typing import Optional, Dict
+from typing import Optional
 
 import datasets
 import evaluate
 import nltk  # Here to have a nice missing dependency error message early on
 import numpy as np
+import spacy
+import torch.cuda
 from datasets import load_dataset
 from filelock import FileLock
 
@@ -97,12 +99,12 @@ class ModelArguments:
         default="main",
         metadata={"help": "The specific model version to use (can be a branch name, tag name or commit id)."},
     )
-    use_auth_token: bool = field(
-        default=False,
+    token: str = field(
+        default=None,
         metadata={
             "help": (
-                "Will use the token generated when running `huggingface-cli login` (necessary to use this script "
-                "with private models)."
+                "The token to use as HTTP bearer authorization for remote files. If not specified, will use the token "
+                "generated when running `huggingface-cli login` (stored in `~/.huggingface`)."
             )
         },
     )
@@ -414,7 +416,7 @@ def main():
             data_args.dataset_name,
             data_args.dataset_config_name,
             cache_dir=model_args.cache_dir,
-            use_auth_token=True if model_args.use_auth_token else None,
+            token=model_args.token,
         )
     else:
         data_files = {}
@@ -431,7 +433,7 @@ def main():
             extension,
             data_files=data_files,
             cache_dir=model_args.cache_dir,
-            use_auth_token=True if model_args.use_auth_token else None,
+            token=model_args.token,
         )
     # See more about loading any type of standard or custom dataset (from files, python dict, pandas DataFrame, etc) at
     # https://huggingface.co/docs/datasets/loading_datasets.html.
@@ -445,14 +447,14 @@ def main():
         model_args.config_name if model_args.config_name else model_args.model_name_or_path,
         cache_dir=model_args.cache_dir,
         revision=model_args.model_revision,
-        use_auth_token=True if model_args.use_auth_token else None,
+        token=model_args.token,
     )
     tokenizer = AutoTokenizer.from_pretrained(
         model_args.tokenizer_name if model_args.tokenizer_name else model_args.model_name_or_path,
         cache_dir=model_args.cache_dir,
         use_fast=model_args.use_fast_tokenizer,
         revision=model_args.model_revision,
-        use_auth_token=True if model_args.use_auth_token else None,
+        token=model_args.token,
     )
     model = AutoModelForSeq2SeqLM.from_pretrained(
         model_args.model_name_or_path,
@@ -460,7 +462,7 @@ def main():
         config=config,
         cache_dir=model_args.cache_dir,
         revision=model_args.model_revision,
-        use_auth_token=True if model_args.use_auth_token else None,
+        token=model_args.token,
     )
 
     # We resize the embeddings only when necessary to avoid index errors. If you are creating a model from scratch
@@ -502,6 +504,7 @@ def main():
 
     # Preprocessing the datasets.
     # We need to tokenize inputs and targets.
+    column_names = []
     if training_args.do_train or hyperopt_args.do_hparams_search:
         if "train" not in raw_datasets:
             raise ValueError("--do_train requires a train dataset")
@@ -515,10 +518,9 @@ def main():
             raise ValueError("--do_predict requires a test dataset")
         column_names = raw_datasets["test"].column_names
     elif not hyperopt_args.do_hparams_search:
-        logger.info(
+        raise ValueError(
             "There is nothing to do. Please pass `do_train`, `do_eval`, 'do_hparams_search' and/or `do_predict`."
         )
-        return
 
     if isinstance(tokenizer, tuple(MULTILINGUAL_TOKENIZERS)):
         assert (
@@ -639,7 +641,9 @@ def main():
         pad_to_multiple_of=8 if training_args.fp16 else None,
     )
 
-    # Metric
+    # Metrics
+    nlp_parser = spacy.load("nl_core_news_sm")
+
     rouge_metric = evaluate.load("rouge")
     sari_metric = evaluate.load("sari")
     bleu_metric = evaluate.load("sacrebleu")
@@ -650,8 +654,8 @@ def main():
         labels = [label.strip() for label in labels]
 
         # rougeLSum expects newline after each sentence
-        preds = ["\n".join(nltk.sent_tokenize(pred)) for pred in preds]
-        labels = ["\n".join(nltk.sent_tokenize(label)) for label in labels]
+        preds = ["\n".join(list(map(str, doc.sents))) for doc in nlp_parser.pipe(preds)]
+        labels = ["\n".join(list(map(str, doc.sents))) for doc in nlp_parser.pipe(labels)]
 
         return preds, labels
 
@@ -674,9 +678,10 @@ def main():
 
         # The ROUGE stemmer is nltk's Porter stemmer which is very much focused on English, so not using it here
         rouge_result = rouge_metric.compute(
-            predictions=decoded_rouge_preds, references=decoded_rouge_labels, use_stemmer=False
+            predictions=decoded_rouge_preds, references=decoded_rouge_labels, use_stemmer=False,
+            rouge_types=['rouge1', 'rouge2', 'rougeL', 'rougeLsum'],
         )
-        result = {**result, **{k: round(v * 100, 4) for k, v in rouge_result.items()}}
+        result = {**result, **rouge_result}
 
         # BLEU
         embedded_refs = [[l] for l in decoded_labels]
@@ -684,8 +689,10 @@ def main():
         result = {**result, **{f"bleu_{k}": v for k, v in bleu_result.items()}}
 
         # BERTScore
+        bertscore_device = "cpu" if not torch.cuda.is_available() else f"cuda:{torch.cuda.device_count()-1}"
         bertscore_result = bertscore_metric.compute(
-            predictions=decoded_preds, references=decoded_labels, model_type="microsoft/mdeberta-v3-base", nthreads=8
+            predictions=decoded_preds, references=decoded_labels, lang="nl", nthreads=16,
+            device=bertscore_device, batch_size=8, use_fast_tokenizer=True,
         )
         result = {
             **result,
@@ -708,17 +715,28 @@ def main():
             sari_result = sari_metric.compute(
                 sources=decoded_inputs, predictions=decoded_preds, references=embedded_refs
             )
-            sari_result = {k: round(v, 4) for k, v in sari_result.items()}
-            result = {**rouge_result, **sari_result}
+            sari_result = {k: v / 100 for k, v in sari_result.items()}
+            result = {**result, **sari_result}
 
         prediction_lens = [np.count_nonzero(pred != tokenizer.pad_token_id) for pred in preds]
         result["gen_len"] = np.mean(prediction_lens)
 
         if training_args.include_inputs_for_metrics:
             # With sari
-            result["combined_metrics"] = result["sari"] + result["bleu_score"] + result["bertscore_f1"] + result["rougeLSum"]
+            result["combined_metrics"] = result["sari"] + result["bleu_score"] + result["bertscore_f1"] + result["rougeLsum"]
         else:
-            result["combined_metrics"] = result["bleu_score"] + result["bertscore_f1"] + result["rougeLSum"]
+            result["combined_metrics"] = result["bleu_score"] + result["bertscore_f1"] + result["rougeLsum"]
+
+        keys_to_keep = {
+            "sari",
+            "bleu_score",
+            "bertscore_f1",
+            "rougeLsum",
+            "combined_metrics",
+            "gen_len",
+        }
+
+        result = {k: v for k, v in result.items() if k in keys_to_keep}
 
         return result
 
@@ -760,12 +778,13 @@ def main():
             config=config,
             cache_dir=model_args.cache_dir,
             revision=model_args.model_revision,
-            use_auth_token=True if model_args.use_auth_token else None,
+            token=model_args.token,
         )
 
     # Initialize our Trainer
-    training_args.metric_for_best_model = "eval/loss" if hyperopt_args.hparam_optimize_for_loss else "eval/combined_metrics"
-    training_args.greater_is_better = not hyperopt_args.hparam_optimize_for_loss
+    if hyperopt_args.do_hparams_search:
+        training_args.metric_for_best_model = "eval/loss" if hyperopt_args.hparam_optimize_for_loss else "eval/combined_metrics"
+        training_args.greater_is_better = not hyperopt_args.hparam_optimize_for_loss
     trainer = Seq2SeqTrainer(
         model=None if hyperopt_args.do_hparams_search else model,
         args=training_args,
@@ -780,7 +799,7 @@ def main():
     if hyperopt_args.do_hparams_search:
         best_trial = trainer.hyperparameter_search(
             backend="wandb",
-            metric="eval/combined_metrics",
+            metric="eval/loss" if hyperopt_args.hparam_optimize_for_loss else "eval/combined_metrics",
             hp_space=wandb_hp_space,
             n_trials=hyperopt_args.hparam_max_trials,
             direction="minimize" if hyperopt_args.hparam_optimize_for_loss else "maximize",
@@ -790,7 +809,7 @@ def main():
         with Path(training_args.output_dir).joinpath("wandb_best_hparams.json").open("w", encoding="utf-8") as hp_out:
             best_trial.hyperparameters.pop("assignments", None)
             best_trial.hyperparameters["metric"] = (
-                "eval/loss" if hyperopt_args.hparam_optimize_for_loss else "eval/sari+eval/rougeLsum"
+                "eval/loss" if hyperopt_args.hparam_optimize_for_loss else "eval/combined_metrics"
             )
             hparams_dump = {
                 **best_trial.hyperparameters,
@@ -817,7 +836,7 @@ def main():
             data_args.max_train_samples if data_args.max_train_samples is not None else len(train_dataset)
         )
         metrics["train_samples"] = min(max_train_samples, len(train_dataset))
-
+        print(metrics)
         trainer.log_metrics("train", metrics)
         trainer.save_metrics("train", metrics)
         trainer.save_state()

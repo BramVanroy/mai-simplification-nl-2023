@@ -1,0 +1,2 @@
+- Add readability (Flesch-Douma)
+- Add syntactic complexity metrics (e.g. https://github.com/andreasvc/udstyle)
